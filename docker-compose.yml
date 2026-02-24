@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: mooshi_user
+      POSTGRES_PASSWORD: mooshi_password
+      POSTGRES_DB: mooshi_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://mooshi_user:mooshi_password@db:5432/mooshi_db
+    depends_on:
+      - db
+    # Required for hot-reloading native development without rebuilding containers repeatedly 
+    volumes:
+      - ./backend:/app
+
+volumes:
+  postgres_data:

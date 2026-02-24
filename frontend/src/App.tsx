@@ -4,13 +4,12 @@ import { Tasks } from "./pages/Tasks"
 import { Notes } from "./pages/Notes"
 import { ThemeProvider } from "./components/theme-provider"
 import { useEffect } from "react"
+import { useAppStore } from "./store"
 
 function App() {
   useEffect(() => {
-    fetch('http://localhost:8000/api/health')
-      .then(res => res.json())
-      .then(data => console.log('Backend health:', data))
-      .catch(err => console.error('Backend connection error:', err));
+    // Fetch initial state from PostgreSQL backend
+    useAppStore.getState().initialize();
   }, []);
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
