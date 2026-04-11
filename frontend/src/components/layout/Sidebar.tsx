@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link, useLocation, useSearchParams } from "react-router-dom"
-import { CheckSquare, StickyNote, Folder as FolderIcon, Plus, Archive, Trash2 } from "lucide-react"
+import { CheckSquare, StickyNote, Folder as FolderIcon, Plus, Archive, Trash2, Bell } from "lucide-react"
 import { useAppStore } from "@/store"
 import { Button } from "@/components/ui/button"
 import {
@@ -231,6 +231,24 @@ export function SidebarContent() {
                         ))}
                     </nav>
                 </div>
+            </div>
+            <div className="p-4 border-t">
+                <Button
+                    variant="outline"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                        if ('Notification' in window) {
+                            Notification.requestPermission().then(permission => {
+                                if (permission === 'granted') {
+                                    alert('Notifications enabled!');
+                                }
+                            });
+                        }
+                    }}
+                >
+                    <Bell className="mr-2 h-4 w-4" />
+                    Enable Notifications
+                </Button>
             </div>
         </div>
     )

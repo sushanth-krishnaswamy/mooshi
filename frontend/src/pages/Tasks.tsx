@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { isBefore, startOfDay, isToday, isTomorrow, addDays, isWithinInterval, parseISO } from "date-fns"
-import { Search, Plus, Calendar as CalendarIcon, Tag, CheckSquare, StickyNote, ChevronDown, ChevronRight, Trash2, RotateCcw, Archive } from "lucide-react"
+import { Search, Plus, Calendar as CalendarIcon, Tag, CheckSquare, StickyNote, ChevronDown, ChevronRight, Trash2, RotateCcw, Archive, GripVertical } from "lucide-react"
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd"
 
 import { useAppStore } from "@/store"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 
 export function Tasks() {
-    const { tasks, notes, addTask, updateTask, toggleTask, deleteTask, permanentlyDeleteTask, restoreTask, tags } = useAppStore()
+    const { tasks, notes, addTask, updateTask, toggleTask, deleteTask, permanentlyDeleteTask, restoreTask, tags, reorderTasks } = useAppStore()
     const [searchParams] = useSearchParams()
     const view = searchParams.get("view") ?? "active"  // "active" | "completed" | "deleted"
 
@@ -132,7 +133,7 @@ export function Tasks() {
             Other: [] as typeof tasks,
         }
 
-        manualTasks.forEach((task) => {
+        manualTasks.sort((a, b) => a.order - b.order).forEach((task) => {
             if (!task.dueDate) {
                 groups.Other.push(task)
                 return
@@ -156,12 +157,39 @@ export function Tasks() {
 
     const totalFiltered = Object.values(groupedTasks).reduce((sum, arr) => sum + arr.length, 0) + noteGroups.length
 
+    const onDragEnd = (result: DropResult) => {
+        if (!result.destination) return
+
+        const sourceIndex = result.source.index
+        const destinationIndex = result.destination.index
+
+        if (sourceIndex === destinationIndex && result.source.droppableId === result.destination.droppableId) return
+
+        const groupTasks = groupedTasks[result.source.droppableId as keyof typeof groupedTasks]
+        if (!groupTasks) return
+
+        const newItems = Array.from(groupTasks)
+        const [reorderedItem] = newItems.splice(sourceIndex, 1)
+        newItems.splice(destinationIndex, 0, reorderedItem)
+
+        const updates = newItems.map((item, index) => ({
+            id: item.id,
+            order: index
+        }))
+
+        reorderTasks(updates)
+    }
+
     // Reusable task row renderer
-    const renderTaskRow = (task: typeof tasks[0], opts?: { compact?: boolean }) => (
+    const renderTaskRow = (task: typeof tasks[0], opts?: { compact?: boolean, dragHandleProps?: any }) => (
         <div
-            key={task.id}
-            className={`group flex items-start gap-3 ${opts?.compact ? "px-4 py-3" : "p-3 rounded-lg border border-transparent hover:border-border"} hover:bg-muted/50 transition-colors`}
+            className={`group flex items-start gap-3 ${opts?.compact ? "px-4 py-3" : "p-3 rounded-lg border border-transparent hover:border-border"} hover:bg-muted/50 transition-colors bg-card`}
         >
+            {view === "active" && opts?.dragHandleProps && (
+                <div {...opts.dragHandleProps} className="mt-1 cursor-grab opacity-0 group-hover:opacity-50 hover:!opacity-100 shrink-0">
+                    <GripVertical className="h-4 w-4" />
+                </div>
+            )}
             {view === "active" && (
                 <Checkbox
                     checked={task.completed}
@@ -254,6 +282,7 @@ export function Tasks() {
     }[view as 'active' | 'completed' | 'deleted'] ?? { title: "Tasks", icon: null, emptyMsg: "No tasks", emptyHint: "" }
 
     return (
+        <DragDropContext onDragEnd={onDragEnd}>
         <div className="space-y-4 md:space-y-6 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{viewMeta.title}</h1>
@@ -372,17 +401,30 @@ export function Tasks() {
                         {(Object.entries(groupedTasks) as [keyof typeof groupedTasks, typeof tasks][]).map(([groupName, groupTasks]) => {
                             if (groupTasks.length === 0) return null
                             return (
-                                <div key={groupName} className="space-y-2">
-                                    <h3 className="font-semibold text-lg flex items-center gap-2 border-b pb-2">
-                                        {groupName}
-                                        <Badge variant="secondary" className="ml-auto rounded-full">
-                                            {groupTasks.length}
-                                        </Badge>
-                                    </h3>
-                                    <div className="space-y-1">
-                                        {groupTasks.map(task => renderTaskRow(task))}
-                                    </div>
-                                </div>
+                                <Droppable key={groupName} droppableId={groupName}>
+                                    {(provided) => (
+                                        <div key={groupName} className="space-y-2" ref={provided.innerRef} {...provided.droppableProps}>
+                                            <h3 className="font-semibold text-lg flex items-center gap-2 border-b pb-2">
+                                                {groupName}
+                                                <Badge variant="secondary" className="ml-auto rounded-full">
+                                                    {groupTasks.length}
+                                                </Badge>
+                                            </h3>
+                                            <div className="space-y-1">
+                                                {groupTasks.map((task, index) => (
+                                                    <Draggable key={task.id} draggableId={task.id} index={index}>
+                                                        {(provided) => (
+                                                            <div ref={provided.innerRef} {...provided.draggableProps}>
+                                                                {renderTaskRow(task, { dragHandleProps: provided.dragHandleProps })}
+                                                            </div>
+                                                        )}
+                                                    </Draggable>
+                                                ))}
+                                                {provided.placeholder}
+                                            </div>
+                                        </div>
+                                    )}
+                                </Droppable>
                             )
                         })}
 
@@ -420,7 +462,11 @@ export function Tasks() {
                                                 </button>
                                                 {!isCollapsed && (
                                                     <div className="divide-y">
-                                                        {noteTasks.map(task => renderTaskRow(task, { compact: true }))}
+                                                        {noteTasks.map(task => (
+                                                            <div key={task.id}>
+                                                                {renderTaskRow(task, { compact: true })}
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 )}
                                             </div>
@@ -435,7 +481,11 @@ export function Tasks() {
                 {/* Completed / Deleted flat list */}
                 {(view === "completed" || view === "deleted") && (
                     <div className="space-y-1">
-                        {Object.values(groupedTasks).flat().map(task => renderTaskRow(task))}
+                        {Object.values(groupedTasks).flat().map(task => (
+                            <div key={task.id}>
+                                {renderTaskRow(task)}
+                            </div>
+                        ))}
                     </div>
                 )}
 
@@ -457,5 +507,6 @@ export function Tasks() {
                 )}
             </div>
         </div>
+        </DragDropContext>
     )
 }

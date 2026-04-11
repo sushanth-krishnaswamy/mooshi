@@ -3,7 +3,9 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
-import { Bold, Italic, Code, ListTodo, List, ListOrdered, Image as ImageIcon } from 'lucide-react'
+import Heading from '@tiptap/extension-heading'
+import Blockquote from '@tiptap/extension-blockquote'
+import { Bold, Italic, Code, ListTodo, List, ListOrdered, Image as ImageIcon, Heading1, Heading2, Heading3, Quote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -31,6 +33,31 @@ const MenuBar = ({ editor, onImageAttach }: MenuBarProps) => {
     return (
         <div className="border-b bg-muted/30 shrink-0">
             <div className="p-2 flex flex-wrap items-center gap-1">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                    className={editor.isActive('heading', { level: 1 }) ? 'bg-muted' : ''}
+                >
+                    <Heading1 className="h-4 w-4" />
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                    className={editor.isActive('heading', { level: 2 }) ? 'bg-muted' : ''}
+                >
+                    <Heading2 className="h-4 w-4" />
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                    className={editor.isActive('heading', { level: 3 }) ? 'bg-muted' : ''}
+                >
+                    <Heading3 className="h-4 w-4" />
+                </Button>
+                <div className="w-px h-6 bg-border mx-1 my-auto" />
                 <Button
                     variant="ghost"
                     size="sm"
@@ -82,6 +109,14 @@ const MenuBar = ({ editor, onImageAttach }: MenuBarProps) => {
                 >
                     <ListTodo className="h-4 w-4" />
                 </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                    className={editor.isActive('blockquote') ? 'bg-muted' : ''}
+                >
+                    <Quote className="h-4 w-4" />
+                </Button>
 
                 {onImageAttach && (
                     <>
@@ -127,6 +162,10 @@ export function RichTextEditor({ content, onChange, editable = true, onImageAtta
     const editor = useEditor({
         extensions: [
             StarterKit,
+            Heading.configure({
+                levels: [1, 2, 3],
+            }),
+            Blockquote,
             TaskList.configure({
                 HTMLAttributes: {
                     class: 'not-prose pl-2',

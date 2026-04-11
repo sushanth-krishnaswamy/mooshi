@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { v4 as uuidv4 } from 'uuid';
 import type { Task, Note, Folder, Tag } from '../types';
+
+const API_BASE = 'http://localhost:8000/api';
 
 interface AppState {
     tasks: Task[];
@@ -9,248 +9,349 @@ interface AppState {
     folders: Folder[];
     tags: Tag[];
 
-    // Task actions
-    addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => string;
-    updateTask: (id: string, task: Partial<Task>) => void;
-    deleteTask: (id: string) => void;          // soft-delete → status:'deleted'
-    permanentlyDeleteTask: (id: string) => void; // hard delete
-    restoreTask: (id: string) => void;         // deleted → active
-    toggleTask: (id: string) => void;
+    fetchInitialData: () => Promise<void>;
 
-    // Note actions
-    addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => string;
-    updateNote: (id: string, note: Partial<Note>) => void;
-    deleteNote: (id: string) => void;              // soft-delete → status:'deleted'
-    permanentlyDeleteNote: (id: string) => void;   // hard delete
-    archiveNote: (id: string) => void;             // active → archived
-    restoreNote: (id: string) => void;             // deleted/archived → active
+    addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => Promise<string>;
+    updateTask: (id: string, task: Partial<Task>) => Promise<void>;
+    deleteTask: (id: string) => Promise<void>;
+    permanentlyDeleteTask: (id: string) => Promise<void>;
+    restoreTask: (id: string) => Promise<void>;
+    toggleTask: (id: string) => Promise<void>;
+    reorderTasks: (updates: { id: string, order: number }[]) => Promise<void>;
 
-    // Folder actions
-    addFolder: (folder: Omit<Folder, 'id'>) => void;
-    updateFolder: (id: string, folder: Partial<Folder>) => void;
-    deleteFolder: (id: string) => void;
+    addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+    updateNote: (id: string, note: Partial<Note>) => Promise<void>;
+    deleteNote: (id: string) => Promise<void>;
+    permanentlyDeleteNote: (id: string) => Promise<void>;
+    archiveNote: (id: string) => Promise<void>;
+    restoreNote: (id: string) => Promise<void>;
 
-    // Tag actions
-    addTag: (tag: Omit<Tag, 'id'>) => string;
-    deleteTag: (id: string) => void;
+    addFolder: (folder: Omit<Folder, 'id'>) => Promise<void>;
+    updateFolder: (id: string, folder: Partial<Folder>) => Promise<void>;
+    deleteFolder: (id: string) => Promise<void>;
+
+    addTag: (tag: Omit<Tag, 'id'>) => Promise<string>;
+    deleteTag: (id: string) => Promise<void>;
 }
 
-export const useAppStore = create<AppState>()(
-    persist(
-        (set) => ({
-            tasks: [],
-            notes: [],
-            folders: [
-                { id: '1', name: 'Personal', type: 'task' },
-                { id: '2', name: 'Work', type: 'task' },
-                { id: '3', name: 'Journals', type: 'note' },
-            ],
-            tags: [
-                { id: '1', name: 'Important', color: '#ef4444' },
-            ],
+export const useAppStore = create<AppState>((set, get) => ({
+    tasks: [],
+    notes: [],
+    folders: [],
+    tags: [],
 
-            addTask: (taskData) => {
-                const id = uuidv4();
-                const now = new Date().toISOString();
-                const newTask: Task = { ...taskData, id, status: taskData.status ?? 'active', createdAt: now, updatedAt: now };
-                set((state) => ({ tasks: [...state.tasks, newTask] }));
-                return id;
-            },
-            updateTask: (id, taskUpdate) =>
-                set((state) => ({
-                    tasks: state.tasks.map((t) =>
-                        t.id === id ? { ...t, ...taskUpdate, updatedAt: new Date().toISOString() } : t
-                    ),
-                })),
-            deleteTask: (id) =>
-                set((state) => ({
-                    tasks: state.tasks.map((t) =>
-                        t.id === id ? { ...t, status: 'deleted' as const, updatedAt: new Date().toISOString() } : t
-                    )
-                })),
-            permanentlyDeleteTask: (id) =>
-                set((state) => ({ tasks: state.tasks.filter((t) => t.id !== id) })),
-            restoreTask: (id) =>
-                set((state) => ({
-                    tasks: state.tasks.map((t) =>
-                        t.id === id ? { ...t, status: 'active' as const, completed: false, updatedAt: new Date().toISOString() } : t
-                    )
-                })),
-            toggleTask: (id) =>
-                set((state) => {
-                    const task = state.tasks.find(t => t.id === id);
-                    if (!task) return state;
+    fetchInitialData: async () => {
+        try {
+            const [tasksRes, notesRes, foldersRes, tagsRes] = await Promise.all([
+                fetch(`${API_BASE}/tasks`),
+                fetch(`${API_BASE}/notes`),
+                fetch(`${API_BASE}/folders`),
+                fetch(`${API_BASE}/tags`)
+            ]);
 
-                    const newCompleted = !task.completed;
-                    const newStatus = newCompleted ? 'completed' : 'active';
-                    const updatedTasks = state.tasks.map(t =>
-                        t.id === id ? { ...t, completed: newCompleted, status: newStatus as Task['status'], updatedAt: new Date().toISOString() } : t
-                    );
+            const tasks = await tasksRes.json();
+            const notes = await notesRes.json();
+            const folders = await foldersRes.json();
+            const tags = await tagsRes.json();
 
-                    let updatedNotes = state.notes;
-                    if (task.noteId) {
-                        const note = state.notes.find(n => n.id === task.noteId);
-                        if (note) {
-                            const parser = new DOMParser();
-                            const doc = parser.parseFromString(note.content, 'text/html');
-                            const taskNodes = doc.querySelectorAll('li[data-type="taskItem"]');
+            set({ tasks, notes, folders, tags });
+        } catch (error) {
+            console.error('Failed to fetch initial data:', error);
+        }
+    },
 
-                            Array.from(taskNodes).forEach(node => {
-                                if (node.textContent?.trim() === task.title) {
-                                    node.setAttribute('data-checked', newCompleted ? 'true' : 'false');
-                                }
-                            });
+    addTask: async (taskData) => {
+        try {
+            const newTaskData = { ...taskData, status: taskData.status ?? 'active', completed: false, order: get().tasks.length };
+            const response = await fetch(`${API_BASE}/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTaskData)
+            });
+            const newTask = await response.json();
+            set((state) => ({ tasks: [...state.tasks, newTask] }));
+            return newTask.id;
+        } catch (error) {
+            console.error('Failed to add task:', error);
+            return '';
+        }
+    },
 
-                            updatedNotes = state.notes.map(n =>
-                                n.id === task.noteId ? { ...n, content: doc.body.innerHTML, updatedAt: new Date().toISOString() } : n
-                            );
-                        }
-                    }
+    updateTask: async (id, taskUpdate) => {
+        try {
+            const response = await fetch(`${API_BASE}/tasks/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(taskUpdate)
+            });
+            const updatedTask = await response.json();
+            set((state) => ({
+                tasks: state.tasks.map((t) => (t.id === id ? updatedTask : t)),
+            }));
+        } catch (error) {
+            console.error('Failed to update task:', error);
+        }
+    },
 
-                    return {
-                        tasks: updatedTasks,
-                        notes: updatedNotes
-                    };
-                }),
+    deleteTask: async (id) => {
+        const store = get();
+        await store.updateTask(id, { status: 'deleted' });
+    },
 
-            addNote: (noteData) => {
-                const id = uuidv4();
-                const now = new Date().toISOString();
-                const newNote: Note = { ...noteData, id, status: noteData.status ?? 'active', createdAt: now, updatedAt: now };
+    permanentlyDeleteTask: async (id) => {
+        try {
+            await fetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
+            set((state) => ({ tasks: state.tasks.filter((t) => t.id !== id) }));
+        } catch (error) {
+            console.error('Failed to permanently delete task:', error);
+        }
+    },
 
-                // If initializing with tasks
+    restoreTask: async (id) => {
+        const store = get();
+        await store.updateTask(id, { status: 'active', completed: false });
+    },
+
+    toggleTask: async (id) => {
+        const state = get();
+        const task = state.tasks.find(t => t.id === id);
+        if (!task) return;
+
+        const newCompleted = !task.completed;
+        const newStatus = newCompleted ? 'completed' : 'active';
+
+        await state.updateTask(id, { completed: newCompleted, status: newStatus });
+
+        if (task.noteId) {
+            const note = state.notes.find(n => n.id === task.noteId);
+            if (note) {
                 const parser = new DOMParser();
-                const doc = parser.parseFromString(noteData.content, 'text/html');
+                const doc = parser.parseFromString(note.content, 'text/html');
                 const taskNodes = doc.querySelectorAll('li[data-type="taskItem"]');
-                const newTasks: Task[] = [];
 
                 Array.from(taskNodes).forEach(node => {
-                    const text = node.textContent?.trim() || '';
-                    if (!text) return;
-                    const checked = node.getAttribute('data-checked') === 'true';
-                    newTasks.push({
-                        id: uuidv4(),
-                        title: text,
-                        completed: checked,
-                        status: checked ? 'completed' : 'active',
-                        noteId: id,
-                        folderId: noteData.folderId,
-                        tags: [],
-                        createdAt: now,
-                        updatedAt: now
-                    });
+                    if (node.textContent?.trim() === task.title) {
+                        node.setAttribute('data-checked', newCompleted ? 'true' : 'false');
+                    }
                 });
 
-                set((state) => ({
-                    notes: [...state.notes, newNote],
-                    tasks: [...state.tasks, ...newTasks]
-                }));
-                return id;
-            },
-            updateNote: (id, noteUpdate) =>
-                set((state) => {
-                    let updatedTasks = state.tasks;
-                    if (noteUpdate.content !== undefined) {
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(noteUpdate.content, 'text/html');
-                        const taskNodes = doc.querySelectorAll('li[data-type="taskItem"]');
-
-                        const extractedTasks = Array.from(taskNodes).map((node) => {
-                            const text = node.textContent?.trim() || '';
-                            const checked = node.getAttribute('data-checked') === 'true';
-                            return { text, checked };
-                        }).filter(et => et.text); // keep only non-empty
-
-                        const existingForNote = state.tasks.filter(t => t.noteId === id);
-                        const newTasksList = state.tasks.filter(t => t.noteId !== id);
-
-                        const now = new Date().toISOString();
-                        const noteFolderName = state.notes.find(n => n.id === id)?.folderId;
-
-                        extractedTasks.forEach(et => {
-                            const existing = existingForNote.find(t => t.title === et.text);
-                            if (existing) {
-                                newTasksList.push({
-                                    ...existing,
-                                    completed: et.checked,
-                                    folderId: noteFolderName,
-                                    updatedAt: now
-                                });
-                            } else {
-                                newTasksList.push({
-                                    id: uuidv4(),
-                                    title: et.text,
-                                    completed: et.checked,
-                                    status: et.checked ? 'completed' : 'active',
-                                    noteId: id,
-                                    folderId: noteFolderName,
-                                    tags: [],
-                                    createdAt: now,
-                                    updatedAt: now
-                                });
-                            }
-                        });
-
-                        updatedTasks = newTasksList;
-                    }
-
-                    return {
-                        tasks: updatedTasks,
-                        notes: state.notes.map((n) =>
-                            n.id === id ? { ...n, ...noteUpdate, updatedAt: new Date().toISOString() } : n
-                        ),
-                    };
-                }),
-            deleteNote: (id) =>
-                set((state) => ({
-                    notes: state.notes.map((n) =>
-                        n.id === id ? { ...n, status: 'deleted' as const, updatedAt: new Date().toISOString() } : n
-                    )
-                })),
-            permanentlyDeleteNote: (id) =>
-                set((state) => ({ notes: state.notes.filter((n) => n.id !== id) })),
-            archiveNote: (id) =>
-                set((state) => ({
-                    notes: state.notes.map((n) =>
-                        n.id === id ? { ...n, status: 'archived' as const, updatedAt: new Date().toISOString() } : n
-                    )
-                })),
-            restoreNote: (id) =>
-                set((state) => ({
-                    notes: state.notes.map((n) =>
-                        n.id === id ? { ...n, status: 'active' as const, updatedAt: new Date().toISOString() } : n
-                    )
-                })),
-
-            addFolder: (folderData) => {
-                const id = uuidv4();
-                set((state) => ({ folders: [...state.folders, { ...folderData, id }] }));
-            },
-            updateFolder: (id, folderUpdate) =>
-                set((state) => ({
-                    folders: state.folders.map((f) => (f.id === id ? { ...f, ...folderUpdate } : f)),
-                })),
-            deleteFolder: (id) =>
-                set((state) => ({
-                    folders: state.folders.filter((f) => f.id !== id),
-                    tasks: state.tasks.map((t) => (t.folderId === id ? { ...t, folderId: undefined } : t)),
-                    notes: state.notes.map((n) => (n.folderId === id ? { ...n, folderId: undefined } : n)),
-                })),
-
-            addTag: (tagData) => {
-                const id = uuidv4();
-                set((state) => ({ tags: [...state.tags, { ...tagData, id }] }));
-                return id;
-            },
-            deleteTag: (id) =>
-                set((state) => ({
-                    tags: state.tags.filter((t) => t.id !== id),
-                    tasks: state.tasks.map((t) => ({ ...t, tags: t.tags.filter((tagId) => tagId !== id) })),
-                    notes: state.notes.map((n) => ({ ...n, tags: n.tags.filter((tagId) => tagId !== id) })),
-                })),
-        }),
-        {
-            name: 'tasks-notes-storage',
+                await state.updateNote(task.noteId, { content: doc.body.innerHTML });
+            }
         }
-    )
-);
+    },
+
+    reorderTasks: async (updates) => {
+        try {
+            await fetch(`${API_BASE}/tasks/reorder/batch`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+
+            set((state) => {
+                const tasksCopy = [...state.tasks];
+                for (const update of updates) {
+                    const idx = tasksCopy.findIndex(t => t.id === update.id);
+                    if (idx !== -1) {
+                        tasksCopy[idx] = { ...tasksCopy[idx], order: update.order };
+                    }
+                }
+                return { tasks: tasksCopy };
+            });
+        } catch (error) {
+            console.error('Failed to reorder tasks:', error);
+        }
+    },
+
+    addNote: async (noteData) => {
+        try {
+            const response = await fetch(`${API_BASE}/notes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...noteData, status: noteData.status ?? 'active' })
+            });
+            const newNote = await response.json();
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(noteData.content, 'text/html');
+            const taskNodes = doc.querySelectorAll('li[data-type="taskItem"]');
+
+            const state = get();
+            for (const node of Array.from(taskNodes)) {
+                const text = node.textContent?.trim() || '';
+                if (!text) continue;
+                const checked = node.getAttribute('data-checked') === 'true';
+                await state.addTask({
+                    title: text,
+                    completed: checked,
+                    status: checked ? 'completed' : 'active',
+                    noteId: newNote.id,
+                    folderId: noteData.folderId,
+                    tags: []
+                });
+            }
+
+            set((state) => ({ notes: [...state.notes, newNote] }));
+            return newNote.id;
+        } catch (error) {
+            console.error('Failed to add note:', error);
+            return '';
+        }
+    },
+
+    updateNote: async (id, noteUpdate) => {
+        try {
+            const state = get();
+
+            if (noteUpdate.content !== undefined) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(noteUpdate.content, 'text/html');
+                const taskNodes = doc.querySelectorAll('li[data-type="taskItem"]');
+
+                const extractedTasks = Array.from(taskNodes).map((node) => {
+                    const text = node.textContent?.trim() || '';
+                    const checked = node.getAttribute('data-checked') === 'true';
+                    return { text, checked };
+                }).filter(et => et.text);
+
+                const existingForNote = state.tasks.filter(t => t.noteId === id);
+                const noteFolderName = state.notes.find(n => n.id === id)?.folderId;
+
+                for (const et of extractedTasks) {
+                    const existing = existingForNote.find(t => t.title === et.text);
+                    if (existing) {
+                        await state.updateTask(existing.id, { completed: et.checked, folderId: noteFolderName });
+                    } else {
+                        await state.addTask({
+                            title: et.text,
+                            completed: et.checked,
+                            status: et.checked ? 'completed' : 'active',
+                            noteId: id,
+                            folderId: noteFolderName,
+                            tags: []
+                        });
+                    }
+                }
+            }
+
+            const response = await fetch(`${API_BASE}/notes/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(noteUpdate)
+            });
+            const updatedNote = await response.json();
+
+            set((state) => ({
+                notes: state.notes.map((n) => (n.id === id ? updatedNote : n)),
+            }));
+        } catch (error) {
+            console.error('Failed to update note:', error);
+        }
+    },
+
+    deleteNote: async (id) => {
+        const store = get();
+        await store.updateNote(id, { status: 'deleted' });
+    },
+
+    permanentlyDeleteNote: async (id) => {
+        try {
+            await fetch(`${API_BASE}/notes/${id}`, { method: 'DELETE' });
+            set((state) => ({ notes: state.notes.filter((n) => n.id !== id) }));
+        } catch (error) {
+            console.error('Failed to permanently delete note:', error);
+        }
+    },
+
+    archiveNote: async (id) => {
+        const store = get();
+        await store.updateNote(id, { status: 'archived' });
+    },
+
+    restoreNote: async (id) => {
+        const store = get();
+        await store.updateNote(id, { status: 'active' });
+    },
+
+    addFolder: async (folderData) => {
+        try {
+            const response = await fetch(`${API_BASE}/folders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(folderData)
+            });
+            const newFolder = await response.json();
+            set((state) => ({ folders: [...state.folders, newFolder] }));
+        } catch (error) {
+            console.error('Failed to add folder:', error);
+        }
+    },
+
+    updateFolder: async (id, folderUpdate) => {
+        try {
+            const response = await fetch(`${API_BASE}/folders/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(folderUpdate)
+            });
+            const updatedFolder = await response.json();
+            set((state) => ({
+                folders: state.folders.map((f) => (f.id === id ? updatedFolder : f)),
+            }));
+        } catch (error) {
+            console.error('Failed to update folder:', error);
+        }
+    },
+
+    deleteFolder: async (id) => {
+        try {
+            await fetch(`${API_BASE}/folders/${id}`, { method: 'DELETE' });
+            const state = get();
+
+            for (const t of state.tasks.filter(t => t.folderId === id)) {
+                await state.updateTask(t.id, { folderId: undefined });
+            }
+            for (const n of state.notes.filter(n => n.folderId === id)) {
+                await state.updateNote(n.id, { folderId: undefined });
+            }
+
+            set((state) => ({ folders: state.folders.filter((f) => f.id !== id) }));
+        } catch (error) {
+            console.error('Failed to delete folder:', error);
+        }
+    },
+
+    addTag: async (tagData) => {
+        try {
+            const response = await fetch(`${API_BASE}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tagData)
+            });
+            const newTag = await response.json();
+            set((state) => ({ tags: [...state.tags, newTag] }));
+            return newTag.id;
+        } catch (error) {
+            console.error('Failed to add tag:', error);
+            return '';
+        }
+    },
+
+    deleteTag: async (id) => {
+        try {
+            await fetch(`${API_BASE}/tags/${id}`, { method: 'DELETE' });
+            const state = get();
+
+            for (const t of state.tasks.filter(t => t.tags.includes(id))) {
+                await state.updateTask(t.id, { tags: t.tags.filter(tagId => tagId !== id) });
+            }
+            for (const n of state.notes.filter(n => n.tags.includes(id))) {
+                await state.updateNote(n.id, { tags: n.tags.filter(tagId => tagId !== id) });
+            }
+
+            set((state) => ({ tags: state.tags.filter((t) => t.id !== id) }));
+        } catch (error) {
+            console.error('Failed to delete tag:', error);
+        }
+    },
+}));
