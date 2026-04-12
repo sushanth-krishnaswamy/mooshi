@@ -22,6 +22,7 @@ export interface Task {
     folderId?: string;
     noteId?: string; // ID of the Note this task was extracted from
     tags: string[]; // Tag IDs
+    order: number;
     createdAt: string;
     updatedAt: string;
 }
