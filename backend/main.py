@@ -10,6 +10,9 @@ from models import SessionLocal, engine
 
 app = FastAPI()
 
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
+
 # Enable CORS for the React frontend
 app.add_middleware(
     CORSMiddleware,

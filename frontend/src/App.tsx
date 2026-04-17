@@ -39,7 +39,7 @@ function App() {
     return () => clearInterval(interval);
   }, [tasks]);
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
