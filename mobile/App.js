@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 
 export default function App() {
-  const [health, setHealth] = useState(null);
+  const [health, setHealth] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
